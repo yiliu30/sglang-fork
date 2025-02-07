@@ -50,7 +50,8 @@ import multiprocessing
 import os
 import time
 from typing import Tuple
-
+from pprint import pprint
+from loguru import logger
 import numpy as np
 import torch
 import torch.distributed as dist
@@ -103,6 +104,20 @@ class BenchArgs:
             **{attr: attr_type(getattr(args, attr)) for attr, attr_type in attrs}
         )
 
+
+def set_torch_compile_config():
+    import torch._dynamo.config
+    import torch._inductor.config
+
+    torch._inductor.config.coordinate_descent_tuning = True
+    torch._inductor.config.triton.unique_kernel_names = True
+    torch._inductor.config.fx_graph_cache = True  # Experimental feature to reduce compilation times, will be on by default in future
+    torch._dynamo.config.inline_inbuilt_nn_modules = True
+    # FIXME: tmp workaround
+    torch._dynamo.config.accumulated_cache_size_limit = 1024
+    torch._dynamo.config.cache_size_limit = 1024
+    if hasattr(torch._dynamo.config, "cache_size_limit"):
+        torch._dynamo.config.cache_size_limit = 1024
 
 def load_model(server_args, port_args, tp_rank):
     suppress_other_loggers()
@@ -261,19 +276,24 @@ def correctness_test(
         bench_args, input_ids, reqs, model_runner
     )
 
+    logger.warning(f"========== Start prefill(extend) witrh reqs \n: {reqs}")
     # Extend (prefill w/ KV cache)
     next_token_ids, next_token_logits, batch = extend(reqs, model_runner)
     rank_print(f"prefill logits (final): {next_token_logits} \n")
-
+    
+    
+    logger.warning(f"========== Start decode with outlen \n: {bench_args.output_len[0] - 1}")
     # Decode
     output_ids = [input_ids[i] + [next_token_ids[i]] for i in range(len(input_ids))]
     for _ in range(bench_args.output_len[0] - 1):
+        logger.warning(f"---------- next_token_ids: {next_token_ids}")
         next_token_ids, _ = decode(next_token_ids, batch, model_runner)
         next_token_ids_list = next_token_ids.tolist()
         for i in range(len(reqs)):
             output_ids[i].append(next_token_ids_list[i])
 
     # Print output texts
+    logger.warning(f"========== all output_ids: {output_ids}")
     for i in range(len(reqs)):
         rank_print(f"========== Prompt {i} ==========")
         rank_print(tokenizer.decode(output_ids[i]), "\n")
@@ -309,6 +329,8 @@ def latency_test_run_once(
     # Prefill
     synchronize(device)
     tic = time.time()
+    # torch.compiler.cudagraph_mark_step_begin()
+    set_torch_compile_config()
     next_token_ids, _, batch = extend(reqs, model_runner)
     synchronize(device)
     prefill_latency = time.time() - tic
@@ -414,6 +436,12 @@ def latency_test(
 
 
 def main(server_args, bench_args):
+    pprint(f"server_args:")
+    pprint(vars(server_args))
+    print(f"=============================================")
+    pprint(f"bench_args:")
+    pprint(vars(bench_args))
+    print(f"=============================================")
     _set_envs_and_config(server_args)
 
     if server_args.model_path:

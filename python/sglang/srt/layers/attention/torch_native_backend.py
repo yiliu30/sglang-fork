@@ -4,7 +4,8 @@ from typing import TYPE_CHECKING, Optional
 
 import torch
 from torch.nn.functional import scaled_dot_product_attention
-
+import logging
+logger = logging.getLogger(__file__)
 from sglang.srt.layers.attention import AttentionBackend
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch
 
@@ -74,6 +75,7 @@ class TorchNativeAttnBackend(AttentionBackend):
         scaling=None,
         enable_gqa=False,
         causal=False,
+        _debug=False,
     ):
         """Run the extend forward by using torch native sdpa op.
 
@@ -94,7 +96,20 @@ class TorchNativeAttnBackend(AttentionBackend):
         Returns:
             output: [num_tokens, num_heads, head_size]
         """
-
+        if _debug:
+            logger.warning(f"[start of extend]----------------------------")
+            logger.warning(f"forward extend args shapes: ")
+            logger.warning(f"query: {query.shape}")
+            logger.warning(f"output: {output.shape}")
+            logger.warning(f"k_cache: {k_cache.shape}")
+            logger.warning(f"v_cache: {v_cache.shape}")
+            logger.warning(f"req_to_token: {req_to_token.shape}")
+            logger.warning(f"req_pool_indices: {req_pool_indices.shape}, {req_pool_indices}")
+            logger.warning(f"seq_lens: {seq_lens.shape}, {seq_lens}")
+            logger.warning(f"extend_prefix_lens: {extend_prefix_lens.shape}")
+            logger.warning(f"extend_seq_lens: {extend_seq_lens.shape}")
+            logger.warning(f"[end of extend] .................................")
+            
         assert seq_lens.shape[0] == extend_prefix_lens.shape[0]
         assert seq_lens.shape[0] == extend_seq_lens.shape[0]
 
@@ -128,7 +143,18 @@ class TorchNativeAttnBackend(AttentionBackend):
             per_req_tokens = req_to_token[req_pool_idx, :seq_len_kv]
             per_req_key = k_cache[per_req_tokens].movedim(0, query.dim() - 2)
             per_req_value = v_cache[per_req_tokens].movedim(0, query.dim() - 2)
-
+            
+            _tmp_query = per_req_query_redudant.unsqueeze(0)
+            _tmp_key = per_req_key.unsqueeze(0)
+            _tmp_value = per_req_value.unsqueeze(0)
+            if _debug:
+                logger.warning(f"[start of extend one seq sdpa]----------------------------")
+                logger.warning(f"forward extend sdpa args shapes: ")
+                logger.warning(f"query: {_tmp_query.shape}")
+                logger.warning(f"key: {_tmp_key.shape}")
+                logger.warning(f"value: {_tmp_value.shape}")
+                logger.warning(f"[end of extend sdpa] .................................")
+            
             per_req_out_redudant = (
                 scaled_dot_product_attention(
                     per_req_query_redudant.unsqueeze(0),
@@ -157,6 +183,7 @@ class TorchNativeAttnBackend(AttentionBackend):
         scaling=None,
         enable_gqa=False,
         causal=False,
+        _debug=False,
     ):
         """Run the decode forward by using torch native sdpa op.
 
@@ -175,6 +202,19 @@ class TorchNativeAttnBackend(AttentionBackend):
         Returns:
             output: [num_tokens, num_heads, head_size]
         """
+        if _debug:
+            logger.warning(f"[start of decode]----------------------------")
+            logger.warning(f"forward decode args shapes: ")
+            logger.warning(f"query: {query.shape}")
+            logger.warning(f"output: {output.shape}")
+            logger.warning(f"k_cache: {k_cache.shape}")
+            logger.warning(f"v_cache: {v_cache.shape}")
+            logger.warning(f"req_to_token: {req_to_token.shape}")
+            logger.warning(f"req_pool_indices: {req_pool_indices.shape}, {req_pool_indices}")
+            logger.warning(f"seq_lens: {seq_lens.shape}, {seq_lens}")
+            logger.warning(f"scaling: {scaling}")
+            logger.warning(f"enable_gqa: {enable_gqa}")
+            logger.warning(f"causal: {causal}")
 
         # [num_tokens, num_heads, head_size] -> [num_heads, num_tokens, head_size]
         query = query.movedim(0, query.dim() - 2)
@@ -198,6 +238,23 @@ class TorchNativeAttnBackend(AttentionBackend):
             per_req_key = k_cache[per_req_tokens].movedim(0, query.dim() - 2)
             per_req_value = v_cache[per_req_tokens].movedim(0, query.dim() - 2)
 
+            _tmp_query = per_req_query.unsqueeze(0)
+            _tmp_key = per_req_key.unsqueeze(0)
+            _tmp_value = per_req_value.unsqueeze(0)
+            
+            if _debug:
+                logger.warning(f"[start of decode one seq]----------------------------")
+                logger.warning(f"forward decode sdpa args shapes: ")
+                logger.warning(f"query: {_tmp_query.shape}")
+                logger.warning(f"key: {_tmp_key.shape}")
+                logger.warning(f"value: {_tmp_value.shape}")
+                logger.warning(f"scaling: {scaling}")
+                logger.warning(f"enable_gqa: {enable_gqa}")
+                logger.warning(f"causal: {causal}")
+                logger.warning(f"[end of decode]...........................")
+                
+            
+            
             per_req_out = (
                 scaled_dot_product_attention(
                     per_req_query.unsqueeze(0),
@@ -238,7 +295,7 @@ class TorchNativeAttnBackend(AttentionBackend):
 
         q_ = q.view(-1, layer.tp_q_head_num, layer.qk_head_dim)
         o_ = o.view(-1, layer.tp_q_head_num, layer.v_head_dim)
-
+        breakpoint()
         self._run_sdpa_forward_extend(
             q_,
             o_,
@@ -252,6 +309,7 @@ class TorchNativeAttnBackend(AttentionBackend):
             scaling=layer.scaling,
             enable_gqa=use_gqa,
             causal=not layer.is_cross_attention,
+            _debug=layer.layer_id == 0,
         )
         return o
 
@@ -294,6 +352,7 @@ class TorchNativeAttnBackend(AttentionBackend):
             scaling=layer.scaling,
             enable_gqa=use_gqa,
             causal=False,
+            _debug=layer.layer_id == 0,
         )
 
         return o

@@ -218,7 +218,8 @@ class LlamaDecoderLayer(nn.Module):
         self.post_attention_layernorm = RMSNorm(
             config.hidden_size, eps=config.rms_norm_eps
         )
-
+    
+    # @torch.compile(mode="max-autotune-no-cudagraphs", dynamic=False)
     def forward(
         self,
         positions: torch.Tensor,
@@ -331,6 +332,9 @@ class LlamaForCausalLM(nn.Module):
         input_embeds: torch.Tensor = None,
         get_embedding: bool = False,
     ) -> LogitsProcessorOutput:
+        logger.warning(f"LlamaForCausalLM.forward input_ids shape: {input_ids.shape}.")
+        logger.warning(f"LlamaForCausalLM.forward input_ids: {input_ids}.")
+        logger.warning(f"LlamaForCausalLM.forward out_cache_loc: {forward_batch.out_cache_loc}.")
         hidden_states = self.model(input_ids, positions, forward_batch, input_embeds)
         if not get_embedding:
             return self.logits_processor(

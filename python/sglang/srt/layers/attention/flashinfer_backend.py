@@ -42,6 +42,43 @@ class WrapperDispatch(Enum):
     CROSS_ATTENTION = auto()
 
 
+
+
+
+class CuDNNPagedAttentionBackend(AttentionBackend):
+    """The backend for cuDNN paged attention.
+    
+    forward
+        forward_decode
+    
+    """
+
+    def init_forward_metadata(self, forward_batch: ForwardBatch):
+        # Update the paged table according to the forward batch
+        pass
+
+    def forward_decode(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        layer: RadixAttention,
+        forward_batch: ForwardBatch,
+        save_kv_cache: bool = True,
+    ):
+        pass
+
+    def forward_extend(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        layer: RadixAttention,
+        forward_batch: ForwardBatch,
+        save_kv_cache: bool = True,
+    ):
+        pass
+
 class FlashInferAttnBackend(AttentionBackend):
     """Flashinfer attention kernels."""
 
@@ -128,6 +165,7 @@ class FlashInferAttnBackend(AttentionBackend):
         self.cuda_graph_metadata = {}
 
     def init_forward_metadata(self, forward_batch: ForwardBatch):
+        breakpoint()
         if forward_batch.forward_mode.is_decode():
             self.indices_updater_decode.update(
                 forward_batch.req_pool_indices,
@@ -244,11 +282,27 @@ class FlashInferAttnBackend(AttentionBackend):
             if k is not None:
                 assert v is not None
                 if save_kv_cache:
+                    if layer.layer_id == 0:
+                        breakpoint()
+                    """
+                    (Pdb) cache_loc
+                    tensor([ 1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12], device='cuda:0',
+                        dtype=torch.int32)
+                    (Pdb) token_to_kv_poolforward_batch.token_to_kv_pool
+                    *** NameError: name 'token_to_kv_poolforward_batch' is not defined
+                    (Pdb) forward_batch.token_to_kv_pool
+                    <sglang.srt.mem_cache.memory_pool.MHATokenToKVPool object at 0x7f1d2da92150>
+                    (Pdb) k.shape
+                    torch.Size([12, 32, 128])
+                    (Pdb) v.shape
+                    torch.Size([12, 32, 128])
+                    """
                     forward_batch.token_to_kv_pool.set_kv_buffer(layer, cache_loc, k, v)
-
+            import flashinfer
+            flashinfer.prefill.BatchPrefillWithPagedKVCacheWrapper
             o = prefill_wrapper_paged.forward(
-                q.contiguous().view(-1, layer.tp_q_head_num, layer.head_dim),
-                forward_batch.token_to_kv_pool.get_kv_buffer(layer.layer_id),
+                q = q.contiguous().view(-1, layer.tp_q_head_num, layer.head_dim),
+                paged_kv_cache = forward_batch.token_to_kv_pool.get_kv_buffer(layer.layer_id),
                 causal=not layer.is_cross_attention,
                 sm_scale=layer.scaling,
                 window_left=layer.sliding_window_size,
@@ -278,6 +332,7 @@ class FlashInferAttnBackend(AttentionBackend):
                 o, _ = merge_state(o1, s1, o2, s2)
 
             if save_kv_cache:
+                breakpoint()
                 forward_batch.token_to_kv_pool.set_kv_buffer(layer, cache_loc, k, v)
 
         return o.view(-1, layer.tp_q_head_num * layer.head_dim)
@@ -291,6 +346,8 @@ class FlashInferAttnBackend(AttentionBackend):
         forward_batch: ForwardBatch,
         save_kv_cache=True,
     ):
+        if layer.layer_id == 0:
+            breakpoint()
         decode_wrapper = self.forward_metadata[0][self._get_wrapper_idx(layer)]
         cache_loc = (
             forward_batch.out_cache_loc
@@ -301,6 +358,8 @@ class FlashInferAttnBackend(AttentionBackend):
         if k is not None:
             assert v is not None
             if save_kv_cache:
+                if layer.layer_id == 0:
+                    breakpoint()
                 forward_batch.token_to_kv_pool.set_kv_buffer(layer, cache_loc, k, v)
 
         o = decode_wrapper.forward(
@@ -457,6 +516,7 @@ class FlashInferIndicesUpdaterDecode:
         kv_indptr: torch.Tensor,
         kv_start_idx: torch.Tensor,
     ):
+        breakpoint()
         bs = len(req_pool_indices)
         kv_indptr[1 : bs + 1] = torch.cumsum(paged_kernel_lens, dim=0)
         kv_indptr = kv_indptr[: bs + 1]
@@ -476,13 +536,13 @@ class FlashInferIndicesUpdaterDecode:
 
         wrapper.end_forward()
         wrapper.begin_forward(
-            kv_indptr,
-            kv_indices,
-            self.kv_last_page_len[:bs],
-            self.num_qo_heads,
-            self.num_kv_heads,
-            self.head_dim,
-            1,
+            indptr=kv_indptr,
+            indices=kv_indices,
+            last_page_len=self.kv_last_page_len[:bs],
+            num_qo_heads=self.num_qo_heads,
+            num_kv_heads=self.num_kv_heads,
+            head_dim=self.head_dim,
+            page_size=1,
             data_type=self.data_type,
             q_data_type=self.q_data_type,
         )

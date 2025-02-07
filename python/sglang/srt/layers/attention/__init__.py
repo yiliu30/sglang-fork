@@ -13,7 +13,10 @@ class AttentionBackend(ABC):
 
     @abstractmethod
     def init_forward_metadata(self, forward_batch: ForwardBatch):
-        """Init the metadata for a forward pass."""
+        """Init the metadata for a forward pass.
+        
+        This function should be called before each model forward pass.
+        """
         raise NotImplementedError()
 
     def init_cuda_graph_state(self, max_bs: int):

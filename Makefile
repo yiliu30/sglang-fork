@@ -7,6 +7,9 @@ check-deps:
 install-deps:
 	pip install isort black
 
+buildd:
+	pip install -e "python[all]" --find-links https://flashinfer.ai/whl/cu121/torch2.4/flashinfer/
+
 format: check-deps
 	@echo "Formatting modified Python files..."
 	git diff --name-only --diff-filter=M | grep '\.py$$' | xargs -I {} sh -c 'isort {} && black {}'
