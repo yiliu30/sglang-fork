@@ -1921,6 +1921,10 @@ class Scheduler(
             max_size=params["max_size"],
         )
 
+    def shutdown_inc(self, params):
+        worker = self.tp_worker.worker
+        worker.model_runner.shutdown_inc()
+
     def abort_request(self, recv_req: AbortReq):
         # Delete requests in the waiting queue
         to_del = []

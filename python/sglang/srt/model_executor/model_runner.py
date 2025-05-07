@@ -255,6 +255,39 @@ class ModelRunner:
         # auxiliary hidden capture mode. TODO: expose this to server args?
         if self.spec_algorithm.is_eagle3() and not self.is_draft_worker:
             self.model.set_eagle3_layers_to_capture()
+        
+        if os.getenv("SGLANG_INC_QUANT_CONFIG", None) is not None:
+            self.inc_quant_interface()
+
+    def inc_quant_interface(
+        self,
+    ):
+        from habana_frameworks.torch import core as htcore
+        logger.info("Preparing model with INC..")
+        from neural_compressor.torch.quantization import FP8Config, convert, prepare
+
+        mark_scales_as_const = os.getenv("SGLANG_MARK_SCALES_AS_CONST", "true") in ("1", "true")
+        config = FP8Config.from_json_file(os.getenv("SGLANG_INC_QUANT_CONFIG", ""))
+        if config.measure:
+            self.model = prepare(self.model, config)
+        elif config.quantize:
+            self.model = convert(self.model, config)
+        logger.info(f"INC Model: {self.model}")
+        if mark_scales_as_const:
+            htcore.hpu_initialize(self.model, mark_only_scales_as_const=True)
+        if torch.distributed.is_initialized():
+            torch.distributed.barrier()
+        self.inc_initialized_successfully = True
+
+    def shutdown_inc(self):
+        can_finalize_inc = getattr(self, "inc_initialized_successfully", False) and not getattr(
+            self, "_is_inc_finalized", False
+        )
+        if can_finalize_inc:
+            from neural_compressor.torch.quantization import finalize_calibration
+
+            finalize_calibration(self.model)
+            self._is_inc_finalized = True
 
     def model_specific_adjustment(self):
         server_args = self.server_args

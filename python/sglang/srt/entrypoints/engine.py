@@ -275,6 +275,7 @@ class Engine(EngineBase):
 
     def shutdown(self):
         """Shutdown the engine"""
+        self.shutdown_inc()
         kill_process_tree(os.getpid(), include_parent=False)
 
     def __enter__(self):
@@ -424,6 +425,9 @@ class Engine(EngineBase):
 
     def save_sharded_model(self, **kwargs):
         self.collective_rpc("save_sharded_model", **kwargs)
+
+    def shutdown_inc(self):
+        self.collective_rpc("shutdown_inc")
 
 
 def _set_envs_and_config(server_args: ServerArgs):

@@ -1216,6 +1216,10 @@ class RowParallelLinear(LinearBase):
         else:
             self.register_parameter("bias", None)
 
+    def resolve_input(self, input):
+        # FIXME: (Yi) This is a hack for quick test
+        return input
+
     def weight_loader(self, param: Parameter, loaded_weight: torch.Tensor):
         input_dim = getattr(param, "input_dim", None)
         use_bitsandbytes_4bit = getattr(param, "use_bitsandbytes_4bit", False)

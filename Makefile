@@ -1,5 +1,8 @@
 .PHONY: check-deps install-deps format update help
 
+build_hpu:
+	pip install -e "python[all_hpu]"
+
 # Show help for each target
 help:
 	@echo "Available targets:"
