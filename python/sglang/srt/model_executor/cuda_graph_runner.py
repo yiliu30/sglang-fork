@@ -40,6 +40,7 @@ from sglang.srt.patch_torch import monkey_patch_torch_compile
 from sglang.srt.utils import (
     get_available_gpu_memory,
     get_device_memory_capacity,
+    logger,
     rank0_log,
 )
 
@@ -172,6 +173,51 @@ def get_global_graph_memory_pool():
 def set_global_graph_memory_pool(val):
     global global_graph_memory_pool
     global_graph_memory_pool = val
+
+
+import torch
+
+
+class CudaMemoryTracker:
+    def __init__(self, device: torch.device = torch.device("cuda")):
+        self.device = device
+        self.start_memory = 0
+        self.end_memory = 0
+        self.start_peak = 0
+        self.end_peak = 0
+
+    def __enter__(self):
+        torch.cuda.reset_peak_memory_stats(self.device)
+        torch.cuda.synchronize(self.device)
+        self.start_memory = torch.cuda.memory_allocated(self.device)
+        self.start_peak = torch.cuda.max_memory_allocated(self.device)
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        torch.cuda.synchronize(self.device)
+        self.end_memory = torch.cuda.memory_allocated(self.device)
+        self.end_peak = torch.cuda.max_memory_allocated(self.device)
+
+    def memory_summary(self):
+        return {
+            "start_memory_MB": self.start_memory / 1024**2,
+            "end_memory_MB": self.end_memory / 1024**2,
+            "peak_memory_MB": self.end_peak / 1024**2,
+            "delta_memory_MB": (self.end_memory - self.start_memory) / 1024**2,
+        }
+
+    def print_summary(self):
+        summary = self.memory_summary()
+        # logger.info(f"Start Memory     : {summary['start_memory_MB']:.2f} MB")
+        # logger.info(f"End Memory       : {summary['end_memory_MB']:.2f} MB")
+        # logger.info(f"Peak Memory      : {summary['peak_memory_MB']:.2f} MB")
+        # logger.info(f"Delta Memory     : {summary['delta_memory_MB']:.2f} MB")
+        logger.warning(
+            f"Delta Memory: {summary['delta_memory_MB']:.2f} MB | Start Memory: {summary['start_memory_MB']:.2f} MB | End Memory: {summary['end_memory_MB']:.2f} MB | Peak Memory: {summary['peak_memory_MB']:.2f} MB"
+        )
+
+
+import time
 
 
 class CudaGraphRunner:
@@ -356,32 +402,52 @@ class CudaGraphRunner:
                 if get_tensor_model_parallel_rank() == 0
                 else reversed(self.capture_bs)
             )
+
             for bs in capture_range:
-                if get_tensor_model_parallel_rank() == 0:
-                    avail_mem = get_available_gpu_memory(
-                        self.model_runner.device,
-                        self.model_runner.gpu_id,
-                        empty_cache=False,
+                with CudaMemoryTracker(device=self.model_runner.device) as tracker:
+                    torch.cuda.memory._record_memory_history(
+                        enabled="all", stacks="all"
                     )
-                    capture_range.set_description(
-                        f"Capturing batches ({avail_mem=:.2f} GB)"
+                    if get_tensor_model_parallel_rank() == 0:
+                        avail_mem = get_available_gpu_memory(
+                            self.model_runner.device,
+                            self.model_runner.gpu_id,
+                            empty_cache=False,
+                        )
+                        capture_range.set_description(
+                            f"Capturing batches ({avail_mem=:.2f} GB)"
+                        )
+
+                    with patch_model(
+                        self.model_runner.model,
+                        bs in self.compile_bs,
+                        num_tokens=bs * self.num_tokens_per_bs,
+                        tp_group=self.model_runner.tp_group,
+                    ) as forward:
+                        (
+                            graph,
+                            output_buffers,
+                        ) = self.capture_one_batch_size(bs, forward)
+                        self.graphs[bs] = graph
+                        self.output_buffers[bs] = output_buffers
+
+                    # Save gemlite cache after each capture
+                    save_gemlite_cache()
+                tracker.print_summary()
+
+                try:
+                    local_rank = torch.distributed.get_rank()
+                    timestamp = f"{int(time.time())}"
+                    timestr = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
+                    file_prefix = f"cuda_graph_memory_{local_rank}_{timestr}"
+
+                    torch.cuda.memory._dump_snapshot(f"{file_prefix}.pickle")
+                    logger.info(
+                        f"Dumped cuda graph memory snapshot to {file_prefix}.pickle"
                     )
-
-                with patch_model(
-                    self.model_runner.model,
-                    bs in self.compile_bs,
-                    num_tokens=bs * self.num_tokens_per_bs,
-                    tp_group=self.model_runner.tp_group,
-                ) as forward:
-                    (
-                        graph,
-                        output_buffers,
-                    ) = self.capture_one_batch_size(bs, forward)
-                    self.graphs[bs] = graph
-                    self.output_buffers[bs] = output_buffers
-
-                # Save gemlite cache after each capture
-                save_gemlite_cache()
+                except Exception as e:
+                    logger.error(f"Failed to capture memory snapshot {e}")
+                torch.cuda.memory._record_memory_history(enabled=None)
 
     def capture_one_batch_size(self, bs: int, forward: Callable):
         graph = torch.cuda.CUDAGraph()

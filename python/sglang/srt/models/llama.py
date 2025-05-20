@@ -278,6 +278,7 @@ class LlamaModel(nn.Module):
         self.config = config
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
+        config.num_hidden_layers = 4
         self.pp_group = get_pp_group()
         if self.pp_group.is_first_rank:
             self.embed_tokens = VocabParallelEmbedding(
