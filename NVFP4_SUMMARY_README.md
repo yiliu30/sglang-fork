@@ -4,11 +4,14 @@ This document provides a comprehensive design and implementation summary for NVF
 
 ## Document Location
 
-**Main Summary:** [`NVFP4_KVCACHE_DESIGN_SUMMARY.md`](NVFP4_KVCACHE_DESIGN_SUMMARY.md)
+**Main Summary:** [`NVFP4_KVCACHE_DESIGN_SUMMARY.md`](NVFP4_KVCACHE_DESIGN_SUMMARY.md)  
+**PRs and Issues:** [`NVFP4_KVCACHE_PRS_AND_ISSUES.md`](NVFP4_KVCACHE_PRS_AND_ISSUES.md)
 
 ## What's Covered
 
-The summary document includes:
+### Main Design Summary
+
+The main design summary document includes:
 
 1. **Executive Overview** - High-level description of NVFP4 KVCache and its benefits
 2. **Technical Design** - Detailed explanation of the E2M1 quantization format and block-based microscaling
@@ -20,6 +23,29 @@ The summary document includes:
 8. **Best Practices** - When to use FP4, configuration checklist, and debugging tips
 9. **Future Work** - Current limitations and potential improvements
 10. **References** - Links to documentation, PRs, and external resources
+
+### PRs and Issues Summary
+
+The PRs/Issues document includes:
+
+1. **Key Pull Requests** - Detailed analysis of 15+ PRs from sgl-project/sglang
+   - PR #10078: Foundational FP4 MLA support (Sep 2025)
+   - PR #12612: Extended to MHA support (Nov 2025)
+   - PR #10154: ModelOpt FP4 integration
+   - PR #18314: Recent TRTLLM improvements (Jan 2026)
+   - And more...
+
+2. **Issues and Discussions** - 8+ issues tracking bugs, features, and discussions
+   - Issue #8180: Strategic quantization roadmap
+   - Issue #17655: DeepSeek FP4 discussion
+   - Issue #16595: B200 kernel issues
+   - And more...
+
+3. **Timeline** - Four-phase development history (July 2025 - January 2026)
+
+4. **Key Contributors** - Credits to main developers and contributors
+
+5. **Technical Insights** - Lessons learned from PR discussions
 
 ## Quick Links
 
@@ -65,7 +91,17 @@ This summary was compiled from:
 - Source code analysis of the SGLang repository
 - Official documentation files
 - Test files and benchmarks
-- Pull Request discussions (#10078, #12612)
+- **15+ Pull Requests from sgl-project/sglang** (see NVFP4_KVCACHE_PRS_AND_ISSUES.md)
+- **8+ Issues from sgl-project/sglang** (see NVFP4_KVCACHE_PRS_AND_ISSUES.md)
+- Pull Request discussions (#10078, #12612, #10154, #18314, and more)
+
+### Key PRs Referenced
+- **PR #10078** (Sep 2025): Foundational FP4 MLA support by @JackChuang
+- **PR #12612** (Nov 2025): Extended to MHA support by @JackChuang
+- **PR #10154** (Sep 2025): ModelOpt FP4 integration by @Edwardf0t1
+- **PR #18314** (Jan 2026): Latest TRTLLM improvements by @samuellees
+
+For complete list with descriptions, see [`NVFP4_KVCACHE_PRS_AND_ISSUES.md`](NVFP4_KVCACHE_PRS_AND_ISSUES.md)
 
 ---
 
